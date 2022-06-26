@@ -1,0 +1,1237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd'>
+<nta>
+	<declaration>//---------------------------------------------------------------------------------------------------------------------
+// Place global declarations here.
+/****************************************type define*************************************************************/
+const int INT32_MIN = - 2147483648;
+const int INT32_MAX = 2147483647;
+typedef int[0, INT32_MAX] uint32;
+typedef int[INT32_MIN, INT32_MAX] int32;
+typedef uint32 size;
+typedef uint32 index;
+const uint32 VELOCITY_MIN = 2;
+const uint32 VELOCITY_MAX = 7;
+//typedef uint32 mps;
+typedef struct {
+    int32 numerator;
+    int32 denominator;
+}Fraction;
+typedef Fraction float32;
+
+typedef struct{
+    float32 lat;
+    float32 lon;
+}Point;
+typedef Point Vector;
+
+const int32 PLOY_PSIZE = 20;//Maximum number of polygon points
+typedef struct{
+    Point points[PLOY_PSIZE];
+    size length;
+}Polygon;
+typedef Polygon Trajectory;
+//**environment parameters**//
+const uint32 WAYPOINT_MAX = 4;
+typedef Point Waypoint[WAYPOINT_MAX];
+typedef bool Relation[WAYPOINT_MAX][WAYPOINT_MAX];
+
+//**vehicle parameters**//
+const uint32 VEHICLE_MAX = 2;
+typedef struct{
+    bool auto;
+    index cur_waypoint;
+    index last_waypoint;
+    index dest_waypoint;
+    float32 velocity;
+    size offset;
+    Point position;
+    Polygon path;
+    float32 remain_distance;//remaining distance to move per step
+    bool finished;
+}Vehicle[VEHICLE_MAX ];
+
+/**objects**/
+typedef struct {
+    index id;
+    index class;
+    Vector position;
+}Object;
+const int32 OBJECT_MIN = 1, OBJECT_MAX = VEHICLE_MAX;
+/**detected objects**/
+typedef struct{
+    Object objects[OBJECT_MAX];
+    size length;
+}ClassifiedObjects;
+typedef ClassifiedObjects ObservedObjects;
+ClassifiedObjects classified;
+
+/**recorded ground truth**/
+ObservedObjects observed;
+
+
+int32 timestep;
+// determine whether happens collision
+bool collision=false;
+// determine whether the input is adversarial example
+bool isAE = false;
+//---------------------------------------------------------------------------------------------------------------------
+/*************************************hyper parameters***********************************************************/
+//---------------------------------------------------------------------------------------------------------------------
+//**environment parameters**//
+
+
+Waypoint map = {{{28, 5}, {-198, 1} },
+                {{28,5}, {-98,1}},
+                {{64,1}, {-131,1}},
+                {{-36,1}, {-131,1}}
+};
+
+
+Relation relate = {
+{false, true, false, false},
+{true, false, false, false},
+{false, false, false, true},
+{false, false, true, false}
+};
+const int32 PATH_MAX = 2;
+index path[PATH_MAX] = {0, 1};
+
+/*
+Waypoint map = {{{-127,1}, {-136,1}},{{-123,1}, {-136,1}},{{-118,1}, {-136,1}},{{-114,1}, {-136,1}},{{-109,1}, {-136,1}},{{-105,1}, {-136,1}},{{-100,1}, {-136,1}},{{-96,1}, {-136,1}},{{-91,1}, {-135,1}},{{-87,1}, {-133,1}},{{-83,1}, {-131,1}},{{-80,1}, {-127,1}},{{-78,1}, {-124,1}},{{-49,1}, {-131,1}},{{-55,1}, {-131,1}},{{-61,1}, {-131,1}},{{-68,1}, {-131,1}},{{-74,1}, {-131,1}},{{-80,1}, {-131,1}},{{-87,1}, {-131,1}},{{-93,1}, {-131,1}},{{-99,1}, {-131,1}},{{-105,1}, {-131,1}},{{-112,1}, {-131,1}},{{-118,1}, {-131,1}},{{-124,1}, {-131,1}}};
+Relation relate = {{false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,false},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true},{false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false}};
+
+const int32 PATH_MAX = 13;
+
+index path[PATH_MAX] = {0, 1, 2, 3, 4 ,5 ,6 ,7, 8, 9, 10, 11, 12};
+*/
+//---------------------------------------------------------------------------------------------------------------------
+const uint32 gammar = 10;
+const float32 reserved_distance = {4 * gammar,1};//4
+const float32 deviation_distance = {2 * gammar,1};//2
+const float32 abv = {5, 2}; //average braking speed 2.5
+
+const int32 observe_range = 50 * gammar;
+//---------------------------------------------------------------------------------------------------------------------
+//**synchronization signal**//
+
+//control
+broadcast chan syn;
+//collision detection
+chan request_cd, collided, not_collide;
+//obstacle perception
+chan request_op, objects, no_object;
+
+//advanced emergency braking system
+chan request_aebs, brake, not_brake;
+
+// evirnoment update
+chan readyForEU;
+broadcast chan euDone;
+
+//---------------------------------------------------------------------------------------------------------------------
+/**********************************Fraction/float32 function*****************************************************/
+uint32 _abs(int32 x){return x &lt; 0 ? x == INT32_MIN? INT32_MAX : - x: x;}
+
+int32 gcd(int32 a, int32 b){
+    int32 r;
+    if (!b) return a;
+        r = a % b;
+    while (r){
+        a = b;
+        b = r;
+        r = a % b;
+    }
+    return b;
+}
+void fraction_reduction(Fraction &amp;self){
+    int32 r;
+    if (!self.numerator) self.denominator = 1;
+
+    r = gcd(self.numerator, self.denominator);
+    self.numerator /= r;
+    self.denominator /= r;
+
+    if (self.denominator &lt; 0){
+        self.numerator = - self.numerator;
+        self.denominator = - self.denominator;
+    }
+
+    if (_abs(self.denominator) &gt; 46340 || _abs(self.numerator) &gt; 46340){
+        self.numerator = self.numerator / self.denominator;
+        self.denominator = 1;
+    }
+
+}
+void set_fraction(Fraction &amp;self, const int32 &amp;numerator, const int32 &amp;denominator){
+    self.numerator = numerator;
+    self.denominator = denominator;
+    fraction_reduction(self);
+}
+Fraction to_fraction(const int32 &amp;numerator){
+    Fraction  res = {numerator, 1};
+    return res;
+}
+float32 to_float32(const int32 &amp;numerator){
+    return to_fraction(numerator);
+}
+
+Fraction fadd(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    Fraction res= {0, 1};
+    if (lhs.denominator == 0 || rhs.denominator == 0) return res;
+    res.numerator = lhs.numerator * rhs.denominator + lhs.denominator * rhs.numerator;
+    res.denominator = lhs.denominator * rhs.denominator;
+    fraction_reduction(res);
+    return res;
+}
+Fraction fsub(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    Fraction res= {0, 1};
+    if (lhs.denominator == 0 || rhs.denominator == 0) return res;
+    res.numerator = lhs.numerator * rhs.denominator - lhs.denominator * rhs.numerator;
+    res.denominator = lhs.denominator * rhs.denominator;
+    fraction_reduction(res);
+    return res;
+}
+Fraction fmulti(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    Fraction res= {0, 1};
+    if (lhs.denominator == 0 || rhs.denominator == 0) return res;
+    res.numerator = lhs.numerator * rhs.numerator;
+    res.denominator = lhs.denominator * rhs.denominator;
+    fraction_reduction(res);
+    return res;
+}
+Fraction fdiv(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    Fraction res= {0, 1};
+    if (lhs.denominator == 0 || rhs.denominator == 0) return res;
+    res.numerator = lhs.numerator * rhs.denominator;
+    res.denominator = lhs.denominator * rhs.numerator;
+    fraction_reduction(res);
+    return res;
+}
+
+int32 fint32(const Fraction &amp;self, bool flag){
+    //True:upper_bound，False:lower_bound
+    return flag ? (self.numerator + self.denominator - 1) / self.denominator : self.numerator / self.denominator;
+}
+
+uint32 lower_sqrt(uint32 n){
+    uint32 l = 0, r = n;
+    while (l &lt; r){
+        uint32 mid = l + ((r - l + 1) &gt;&gt; 1);
+        if (mid * mid &gt;= 0 &amp;&amp; mid * mid &lt;= n ) l = mid;
+        else r = mid - 1;
+    }
+    return l;
+    }
+uint32 upper_sqrt(uint32 n){
+    uint32 l = 0, r = n;
+    while (l &lt; r){
+        uint32 mid = l + ((r - l) &gt;&gt; 1);
+        if (mid * mid &lt; 0 &amp;&amp; mid * mid &gt;= n ) r = mid;
+        else l = mid + 1;
+    }
+    return l;
+}
+Fraction fsqrt(const Fraction &amp;self, bool flag){
+    //True:upper_bound，False:lower_bound
+    Fraction res = {0, 1};
+    res.numerator = flag ? upper_sqrt(self.numerator) : lower_sqrt(self.numerator);
+    res.denominator = flag ? upper_sqrt(self.denominator) : lower_sqrt(self.denominator);
+    if (res.denominator == 0) res.denominator = 1;
+    fraction_reduction(res);
+    return res;
+}
+Fraction frabs(const Fraction &amp;self){
+    Fraction res= {self.numerator, self.denominator};
+    if (self.numerator &lt; 0) res.numerator = - self.numerator;
+    if (self.denominator &lt; 0) res.denominator = - self.denominator;
+    fraction_reduction(res);
+    return res;
+}
+bool flss(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    return fsub(lhs, rhs).numerator &lt; 0;
+}
+bool fgtr(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    return fsub(lhs, rhs).numerator &gt; 0;
+}
+bool fequ(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    return fsub(lhs, rhs).numerator == 0;
+}
+bool fleq(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    return flss(lhs, rhs) || fequ(lhs, rhs);
+}
+bool fgeq(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    return fequ(lhs, rhs) || fgtr(lhs, rhs);
+}
+Fraction frmin(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    if (flss(lhs, rhs)) return lhs;
+    return rhs;
+}
+Fraction frmax(const Fraction &amp;lhs, const Fraction &amp;rhs){
+    if (fgtr(lhs, rhs)) return lhs;
+    return rhs;
+}
+void fswap(Fraction &amp;lhs, Fraction &amp;rhs){
+    Fraction tmp = {lhs.numerator, lhs.denominator};
+    lhs.numerator = rhs.numerator;
+    lhs.denominator = rhs.denominator;
+    rhs.numerator = tmp.numerator;
+    rhs.denominator = tmp.denominator;
+}
+//---------------------------------------------------------------------------------------------------------------------
+/****************************polygon/vector/point function*******************************************************/
+
+void set_point(Point &amp;self, const float32 &amp;lat, const float32 &amp;lon){
+    self.lat = lat;
+    self.lon = lon;
+}
+void set_vector(Vector &amp;self, const float32 &amp;lat, const float32 &amp;lon){
+     set_point(self, lat, lon);
+}
+Point padd(const Point &amp;lhs, const Point &amp;rhs){
+    Point res = {fadd(lhs.lat, rhs.lat), fadd(lhs.lon, rhs.lon)};
+    return res;
+}
+Vector vadd(const Vector &amp;lhs, const Vector &amp;rhs){
+    return padd(lhs, rhs);
+}
+Point psub(const Point &amp;lhs, const Point &amp;rhs){
+    Point res = {fsub(lhs.lat, rhs.lat), fsub(lhs.lon, rhs.lon)};
+    return res;
+}
+Vector vsub(const Vector &amp;lhs, const Vector &amp;rhs){
+    return psub(lhs, rhs);
+}
+
+void point_swap(Point &amp;lhs, Point &amp;rhs){
+    Point tmp = lhs;
+    lhs = rhs;
+    rhs = tmp;
+}
+Vector orthogonal(const Vector &amp;self){
+    Point res = {self.lon, self.lat};
+    res.lon.numerator = - res.lon.numerator;
+    return res;
+}
+Vector vector(const Point &amp;a, const Point &amp;b){
+    //a-&gt;b;
+    Vector res = {fsub(b.lat, a.lat), fsub(b.lon, a.lon)};
+    return res;
+}
+void normalize(Vector &amp;self){
+    float32 xx = fmulti(self.lat, self.lat);
+    float32 yy = fmulti(self.lon, self.lon);
+    float32 model = fsqrt(fadd(xx, yy), false);
+    self.lat = fdiv(self.lat, model);
+    self.lon = fdiv(self.lon, model);
+}
+void to_size(Vector &amp;self, const float32 &amp;n){
+    normalize(self);
+    set_vector(self, fmulti(self.lat, n), fmulti(self.lon, n));
+}
+float32 inner_product(const Vector &amp;lhs, const Vector &amp;rhs){
+    float32 res = fadd(fmulti(lhs.lat, rhs.lat), fmulti(lhs.lon, rhs.lon));
+    return res;
+}
+float32 sizeof_vector(const Vector &amp;self){
+    float32 res = fsqrt(fadd(fmulti(self.lat, self.lat), fmulti(self.lon, self.lon)), false);
+    return res;
+}
+
+float32 project(const Vector &amp;lhs, const Vector &amp;rhs){
+    //A-&gt;B
+    float32 size_B = sizeof_vector(rhs);
+    float32 length =  fdiv(inner_product(lhs, rhs), size_B);
+    return length;
+}
+//---------------------------------------------------------------------------------------------------------------------
+/********************************************** vehicle's function**********************************************/
+
+Vehicle cars;
+
+// a queue records all the id of NAVs and NAV
+index vQue[VEHICLE_MAX], tt= 0;
+index vid = 0;
+Point enlarge_map(const uint32 &amp;wp_id){
+    Point res = {fmulti(map[wp_id].lat, to_float32(gammar)), fmulti(map[wp_id].lon, to_float32(gammar))};
+    return res;
+}
+void car_add_pathPoint(const index id, const Point &amp;p){
+    int32 n = cars[id].path.length;
+    if (!n || !fequ(cars[id].path.points[n - 1].lat, p.lat) || !fequ(cars[id].path.points[n - 1].lon, p.lon))
+        cars[id].path.points[cars[id].path.length++] = p;
+}
+void reset(const index &amp;id){
+    cars[id].remain_distance = cars[id].velocity;
+    if (fgtr(cars[id].velocity, to_float32(0)))
+        cars[id].path.length = 0;
+    car_add_pathPoint(id, cars[id].position);
+    
+    // reset the bool variable, it determine whether the input is adversarial example
+    isAE = false;
+}
+
+void initialize(const index id, const bool auto, const index wp_id, const size _offset, const uint32 vel){
+    cars[id].auto = auto;
+    cars[id].cur_waypoint = wp_id;
+    cars[id].last_waypoint = wp_id;
+    cars[id].dest_waypoint = wp_id;
+    cars[id].velocity = to_float32(vel);
+    cars[id].offset = _offset * gammar;
+    cars[id].position = enlarge_map(wp_id);
+    car_add_pathPoint(id, enlarge_map(wp_id));
+    cars[id].remain_distance = to_float32(vel);
+    cars[id].finished = false;
+   // if (!auto) vQue[tt ++] = id;
+    vQue[tt ++] = id;
+}
+void updatePosition_by_distance(const index &amp;id, const float32 &amp;dis_by_step){
+    Vector dir = vector(cars[id].position, enlarge_map(cars[id].dest_waypoint));
+    to_size(dir, dis_by_step);
+    cars[id].position = padd(dir, cars[id].position);
+
+}
+void update_position(const index &amp;id){
+    float32 distance = frmin(cars[id].remain_distance, sizeof_vector(vector(cars[id].position, enlarge_map(cars[id].dest_waypoint))));
+    updatePosition_by_distance(id, distance);
+    cars[id].remain_distance = fsub(cars[id].remain_distance, distance);
+    car_add_pathPoint(id, cars[id].position);
+}
+bool tranfer_next_waypoint(const index &amp;id){
+    return flss(sizeof_vector(vector(cars[id].position, enlarge_map(cars[id].dest_waypoint))), cars[id].remain_distance);
+}
+void location_rectify(const index &amp;id){
+    float32 dis = sizeof_vector(vector(cars[id].position, enlarge_map(cars[id].dest_waypoint)));
+    cars[id].remain_distance = fsub(cars[id].remain_distance, dis); 
+    cars[id].cur_waypoint = cars[id].dest_waypoint;
+    cars[id].position = enlarge_map(cars[id].cur_waypoint);
+}
+bool is_to_finish(const index &amp;id){
+    if (cars[id].cur_waypoint == cars[id].dest_waypoint) return true;
+    if (fgtr(cars[id].remain_distance, to_float32(0))) return false;
+    return  fleq(cars[id].velocity, to_float32(0));
+}
+
+void select_next_destWaypoint(const index &amp;id, const int32 _rand){
+    int i, j;
+    int32 reachable_waypoint[WAYPOINT_MAX], length = 0;
+    location_rectify(id);
+    for (i = 0; i &lt; WAYPOINT_MAX; i ++){
+        if (i != cars[id].cur_waypoint &amp;&amp; i != cars[id].last_waypoint &amp;&amp; relate[i][cars[id].cur_waypoint]){
+            //cars[id].dest_waypoint = i;
+            reachable_waypoint[length ++] = i;
+        }
+    }
+    cars[id].last_waypoint = cars[id].cur_waypoint;
+    if (length) cars[id].dest_waypoint = reachable_waypoint[_rand % length];
+    if (!is_to_finish(id)){
+        car_add_pathPoint(id, enlarge_map(cars[id].cur_waypoint));
+    }
+}
+bool next_timestep(const index &amp;id, bool flag){
+    //True: calculate the accurate distance, the default is False
+    return flag ? cars[id].remain_distance.numerator == 0 : fint32(cars[id].remain_distance, false) == 0;
+}
+
+void path_offset_toPolygon (const Trajectory &amp;path,const size &amp;offset, Polygon &amp;res){
+    int i, j, k;
+    Point A, B;
+    Vector a2b, na2b;
+    float32 model;
+    res.length = (path.length - 1) * 4;
+    for (i = 0; i &lt; path.length - 1; i ++){
+        A = path.points[i];
+        B = path.points[i + 1];
+
+        a2b = vector(A, B);
+        na2b = orthogonal(a2b);
+
+        to_size(na2b, to_float32(offset));
+
+        res.points[i * 2] = padd(A, na2b);
+        res.points[i * 2 + 1] = padd(B, na2b);
+
+        res.points[res.length - i * 2 - 2] = psub(B, na2b);
+        res.points[res.length - i * 2 - 1] = psub(A, na2b);
+    }
+    k = 0;
+    for (j = 1; j &lt; res.length; j ++){
+        if (res.points[j] == res.points[j - 1 - k]) k ++;
+        res.points[j - k] = res.points[j];
+    }
+    res.length -= k;
+}
+Vector car_vector(const index &amp;id){
+    Vector A;
+    A = vector(cars[id].path.points[cars[id].path.length - 2], cars[id].path.points[cars[id].path.length - 1]);
+    return A;
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+</declaration>
+	<template>
+		<name x="9" y="9">NAV</name>
+		<parameter>const uint32 wp_id</parameter>
+		<declaration>// Place local declarations here.
+typedef int[6,6] velocity_domain;
+typedef int[1,1] offset_domain;
+//typedef int[0, WAYPOINT_MAX] random_domain;
+typedef int[0,1] waypoint_domain;
+const uint32 AC = 0;
+const uint32 DC = 0;
+
+uint32 id;
+
+void accelerate(){
+    if (fgeq(fadd(cars[id].velocity, fdiv(to_float32(AC), to_float32(gammar))), to_float32(VELOCITY_MAX)))
+        cars[id].velocity = to_float32(VELOCITY_MAX);
+    else {
+        cars[id].velocity = fadd(cars[id].velocity, fdiv(to_float32(AC), to_float32(gammar)));
+    }
+}
+
+void decelerate(){
+    if (fleq(fsub(cars[id].velocity, fdiv(to_float32(DC), to_float32(gammar))), to_float32(VELOCITY_MIN)))
+        cars[id].velocity = to_float32(VELOCITY_MIN);
+    else {
+        cars[id].velocity = fsub(cars[id].velocity, fdiv(to_float32(DC), to_float32(gammar)));
+    }
+}
+void unchange(){
+     return;
+}</declaration>
+		<location id="id0" x="-1521" y="-1326">
+			<name x="-1538" y="-1360">prepare</name>
+		</location>
+		<location id="id1" x="-1334" y="-1326">
+			<name x="-1326" y="-1317">start</name>
+			<committed/>
+		</location>
+		<location id="id2" x="-1139" y="-1326">
+			<name x="-1190" y="-1326">select</name>
+			<committed/>
+		</location>
+		<location id="id3" x="-892" y="-1326">
+			<name x="-918" y="-1360">moving</name>
+			<committed/>
+		</location>
+		<location id="id4" x="-892" y="-1241">
+			<committed/>
+		</location>
+		<location id="id5" x="-892" y="-1198">
+			<name x="-909" y="-1189">end</name>
+		</location>
+		<location id="id6" x="-722" y="-1326">
+			<name x="-705" y="-1343">finish</name>
+		</location>
+		<location id="id7" x="-1130" y="-1198">
+			<urgent/>
+		</location>
+		<location id="id8" x="-1334" y="-1198">
+			<committed/>
+		</location>
+		<location id="id9" x="-892" y="-1283">
+		</location>
+		<init ref="id0"/>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="-884" y="-1275">euDone?</label>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id8"/>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id1"/>
+			<label kind="assignment" x="-1394" y="-1232">reset(id)</label>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id6"/>
+			<label kind="guard" x="-867" y="-1368">is_to_finish(id)</label>
+			<label kind="assignment" x="-875" y="-1351">cars[id].finished = true</label>
+		</transition>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id5"/>
+			<label kind="guard" x="-884" y="-1232">next_timestep(id, false)</label>
+		</transition>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-1317" y="-1343">tranfer_next_waypoint(id)</label>
+		</transition>
+		<transition>
+			<source ref="id5"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="-1079" y="-1215">syn?</label>
+		</transition>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id3"/>
+			<label kind="guard" x="-1326" y="-1385">!tranfer_next_waypoint(id)</label>
+			<nail x="-1334" y="-1360"/>
+			<nail x="-892" y="-1360"/>
+		</transition>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-1122" y="-1283">!next_timestep(id, false)</label>
+			<nail x="-1139" y="-1241"/>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id9"/>
+			<label kind="guard" x="-884" y="-1326">!is_to_finish(id)</label>
+			<label kind="synchronisation" x="-884" y="-1309">readyForEU!</label>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="select" x="-1122" y="-1351">_waypointId: waypoint_domain</label>
+			<label kind="assignment" x="-1113" y="-1326">select_next_destWaypoint(id,
+                            _waypointId)</label>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="select" x="-1496" y="-1377">_vel: velocity_domain,
+_offset: offset_domain</label>
+			<label kind="synchronisation" x="-1530" y="-1377">syn?</label>
+			<label kind="assignment" x="-1504" y="-1326">id = ++ vid,
+initialize(id, false, 
+wp_id, _offset, _vel)</label>
+		</transition>
+	</template>
+	<template>
+		<name>EU</name>
+		<declaration>int stat = 2;
+void update(){
+    int i;
+    for (i = 0; i &lt; tt; i ++) {
+        update_position(vQue[i]);
+    }
+}</declaration>
+		<location id="id10" x="-561" y="-153">
+		</location>
+		<location id="id11" x="-382" y="-153">
+			<committed/>
+		</location>
+		<init ref="id10"/>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="-510" y="-127">euDone!</label>
+			<label kind="assignment" x="-510" y="-102">stat = tt</label>
+			<nail x="-382" y="-102"/>
+			<nail x="-561" y="-102"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id10"/>
+			<label kind="guard" x="-595" y="-238">stat &gt; 1</label>
+			<label kind="synchronisation" x="-603" y="-221">readyForEU?</label>
+			<label kind="assignment" x="-578" y="-195">stat --</label>
+			<nail x="-612" y="-195"/>
+			<nail x="-518" y="-195"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id11"/>
+			<label kind="guard" x="-510" y="-195">stat == 1</label>
+			<label kind="synchronisation" x="-518" y="-178">readyForEU?</label>
+			<label kind="assignment" x="-510" y="-153">update()</label>
+		</transition>
+	</template>
+	<template>
+		<name>BD</name>
+		<declaration>const int32 id = 0;
+typedef int[7,7] velocity_domain;
+typedef int[1,1] offset_domain;
+bool braked;
+index next = 0;
+void next_destWaypoint(const uint32 &amp;id){
+    location_rectify(id);
+    if (next == PATH_MAX) return;
+    cars[id].dest_waypoint = path[next ++];
+    car_add_pathPoint(id, map[cars[id].cur_waypoint]);
+}
+
+void emerge_brake(){
+    if (!braked){
+        return;
+    }
+    if (fgeq(fsub(cars[id].velocity, fdiv(abv, to_float32(gammar))), to_float32(0))){
+        cars[id].velocity = fsub(cars[id].velocity, fdiv(abv, to_float32(gammar)));
+    }
+    else cars[id].velocity = to_float32(0);
+}
+</declaration>
+		<location id="id12" x="-1895" y="-1113">
+			<name x="-1929" y="-1147">prepare</name>
+		</location>
+		<location id="id13" x="-1734" y="-1113">
+			<name x="-1725" y="-1156">start</name>
+			<urgent/>
+		</location>
+		<location id="id14" x="-1530" y="-1113">
+			<name x="-1581" y="-1113">select</name>
+			<committed/>
+		</location>
+		<location id="id15" x="-1266" y="-1113">
+			<name x="-1317" y="-1147">moving</name>
+			<committed/>
+		</location>
+		<location id="id16" x="-1266" y="-1020">
+			<committed/>
+		</location>
+		<location id="id17" x="-1266" y="-952">
+			<name x="-1249" y="-960">end</name>
+		</location>
+		<location id="id18" x="-1402" y="-952">
+			<urgent/>
+		</location>
+		<location id="id19" x="-1487" y="-926">
+			<committed/>
+		</location>
+		<location id="id20" x="-1598" y="-926">
+			<urgent/>
+		</location>
+		<location id="id21" x="-1734" y="-926">
+			<committed/>
+		</location>
+		<location id="id22" x="-1735" y="-986">
+			<committed/>
+		</location>
+		<location id="id23" x="-1088" y="-1113">
+			<name x="-1105" y="-1147">finish</name>
+		</location>
+		<location id="id24" x="-1309" y="-952">
+			<committed/>
+		</location>
+		<location id="id25" x="-1266" y="-1062">
+		</location>
+		<init ref="id12"/>
+		<transition>
+			<source ref="id25"/>
+			<target ref="id16"/>
+			<label kind="synchronisation" x="-1258" y="-1054">euDone?</label>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id23"/>
+			<label kind="guard" x="-1241" y="-1156">is_to_finish(id)</label>
+			<label kind="assignment" x="-1241" y="-1139">cars[id].finished = true</label>
+		</transition>
+		<transition>
+			<source ref="id22"/>
+			<target ref="id13"/>
+			<label kind="assignment" x="-1717" y="-1071">emerge_brake(),
+reset(id)</label>
+		</transition>
+		<transition>
+			<source ref="id20"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="-1700" y="-943">not_brake?</label>
+		</transition>
+		<transition>
+			<source ref="id20"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="-1700" y="-977">brake?</label>
+			<label kind="assignment" x="-1649" y="-977">braked = true</label>
+			<nail x="-1598" y="-960"/>
+			<nail x="-1708" y="-960"/>
+		</transition>
+		<transition>
+			<source ref="id21"/>
+			<target ref="id22"/>
+		</transition>
+		<transition>
+			<source ref="id19"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="-1581" y="-951">request_aebs!</label>
+		</transition>
+		<transition>
+			<source ref="id18"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-1470" y="-952">objects?</label>
+			<nail x="-1402" y="-926"/>
+		</transition>
+		<transition>
+			<source ref="id18"/>
+			<target ref="id22"/>
+			<label kind="synchronisation" x="-1606" y="-1003">no_object?</label>
+			<nail x="-1402" y="-986"/>
+		</transition>
+		<transition>
+			<source ref="id24"/>
+			<target ref="id18"/>
+			<label kind="synchronisation" x="-1394" y="-977">request_op!</label>
+		</transition>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id17"/>
+			<label kind="guard" x="-1258" y="-1011">next_timestep(id,false)</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id14"/>
+			<label kind="guard" x="-1717" y="-1139">tranfer_next_waypoint(id)</label>
+		</transition>
+		<transition>
+			<source ref="id17"/>
+			<target ref="id24"/>
+			<label kind="synchronisation" x="-1300" y="-977">syn?</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id15"/>
+			<label kind="guard" x="-1691" y="-1190">!tranfer_next_waypoint(id)</label>
+			<nail x="-1734" y="-1165"/>
+			<nail x="-1266" y="-1165"/>
+		</transition>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id14"/>
+			<label kind="guard" x="-1521" y="-1045">!next_timestep(id,false)</label>
+			<nail x="-1530" y="-1020"/>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id25"/>
+			<label kind="guard" x="-1258" y="-1105">!is_to_finish(id)</label>
+			<label kind="synchronisation" x="-1249" y="-1088">readyForEU!</label>
+		</transition>
+		<transition>
+			<source ref="id14"/>
+			<target ref="id15"/>
+			<label kind="assignment" x="-1496" y="-1113">next_destWaypoint(id)</label>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id13"/>
+			<label kind="select" x="-1878" y="-1156">_vel: velocity_domain,
+_offset: offset_domain</label>
+			<label kind="synchronisation" x="-1878" y="-1173">syn?</label>
+			<label kind="assignment" x="-1861" y="-1105">initialize(id, true,
+   path[next ++],
+     _offset, _vel)</label>
+		</transition>
+	</template>
+	<template>
+		<name>CD</name>
+		<declaration>bool collision = false;
+
+Vector edge_vector(const Point &amp;p1, const Point &amp;p2){
+    Vector res = {fsub(p2.lat, p1.lat), fsub(p2.lon, p1.lon)};
+    return res;
+}
+void ploy_to_edges(const Polygon &amp;poly1, const Polygon &amp;poly2, Point &amp;vectors[PLOY_PSIZE * 2]){
+    int  i,j = 0;
+    for (i = 0; i &lt; poly1.length; i ++){
+        vectors[j ++] = vector(poly1.points[i], poly1.points[(i + 1) % poly1.length]);
+    }
+    for (i = 0; i &lt; poly2.length; i ++){
+        vectors[j ++] = vector(poly2.points[i], poly2.points[(i + 1) % poly2.length]);
+    }
+}
+float32 do_product(const Vector &amp;p1, const Vector &amp;p2){
+    //p1.x * p2.x + p1.y * p2.y
+    float32 res = fadd(fmulti(p1.lat, p2.lat), fmulti(p1.lon, p2.lon));
+    return res;
+}
+Vector project(const Polygon &amp;poly, const Vector &amp;axis){
+    float32 dots[PLOY_PSIZE];
+    int32 i;
+    float32 mi, mx;
+    Vector res;
+    for (i = 0; i &lt; poly.length; i ++){
+        dots[i] = do_product(poly.points[i], axis);
+    }
+    mi = dots[0];
+    mx = dots[0];
+    for (i = 1; i &lt; poly.length; i ++){
+        mi = frmin(mi, dots[i]);
+        mx = frmax(mx, dots[i]);
+    }
+    res.lat = mi;
+    res.lon = mx;
+    return res;
+}
+bool overlap(const Vector &amp;pj1, const Vector &amp;pj2){
+    return fleq(pj1.lat, pj2.lon) &amp;&amp; fleq(pj2.lat, pj1.lon);
+}
+bool run_sat(const Polygon &amp;poly1, const Polygon &amp;poly2){
+    Point edges[PLOY_PSIZE * 2];
+    Point axes[PLOY_PSIZE * 2];
+    int32 i;
+    ploy_to_edges(poly1, poly2, edges);
+    for (i = 0; i &lt; poly1.length + poly2.length; i ++){
+        axes[i] = orthogonal(edges[i]);
+    }
+
+    for (i = 0; i &lt; poly1.length + poly2.length; i ++){
+        if (!overlap(project(poly1, axes[i]), project(poly2, axes[i]))) return false;
+    }
+    return true;
+}
+
+void check_collision(){
+    int i;
+    Polygon poly1;//autonomous driving car
+    Polygon poly2;
+    path_offset_toPolygon(cars[0].path, cars[0].offset, poly1);
+    for (i = 0; i &lt; tt; i ++){
+        if (!cars[vQue[i]].auto &amp;&amp; !cars[vQue[i]].finished) {
+            path_offset_toPolygon(cars[vQue[i]].path, cars[vQue[i]].offset, poly2);
+            if (run_sat(poly1, poly2)) collision = true;
+        }
+    }
+}
+
+</declaration>
+		<location id="id26" x="-544" y="-187">
+		</location>
+		<location id="id27" x="-425" y="-187">
+			<committed/>
+		</location>
+		<location id="id28" x="-280" y="-187">
+			<committed/>
+		</location>
+		<init ref="id26"/>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-484" y="-144">!collision</label>
+			<label kind="synchronisation" x="-484" y="-119">not_collide!</label>
+			<nail x="-280" y="-119"/>
+			<nail x="-544" y="-119"/>
+		</transition>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-433" y="-272">collision</label>
+			<label kind="synchronisation" x="-433" y="-255">collided!</label>
+			<nail x="-280" y="-255"/>
+			<nail x="-544" y="-255"/>
+		</transition>
+		<transition>
+			<source ref="id27"/>
+			<target ref="id28"/>
+			<label kind="assignment" x="-408" y="-187">check_collision()</label>
+		</transition>
+		<transition>
+			<source ref="id26"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="-518" y="-212">request_cd?</label>
+		</transition>
+	</template>
+	<template>
+		<name>OP</name>
+		<declaration>typedef int[0,0] class_domain;//0:car, 1:pedestrian,  2: cylist, 3:trivial
+typedef int[1, VEHICLE_MAX - 1] objectNum_domain;
+typedef objectNum_domain object_domain;
+typedef int[0, 0] vector_domain;
+
+int32 rand = 0;
+size n;
+bool mp[VEHICLE_MAX];
+
+void recordGroundTruth(){
+    int32 i, id;
+    observed.length = 0;
+    for (i = 0; i &lt; tt; i ++){
+        id = vQue[i];
+        if (!cars[id].auto &amp;&amp; fleq(sizeof_vector(vector(cars[id].position, cars[0].position)), to_float32(observe_range))){
+            observed.objects[observed.length].id = id;
+            observed.objects[observed.length].class = 0;
+            observed.objects[observed.length++].position = cars[id].position;
+        }
+    }
+}
+
+void juedgeAE(){
+    // sample judgement
+    if (observed.length != classified.length) {
+        isAE = true;
+    }
+}
+void predict_objects(const int32 _obj, const int32 _class, const int32 _x, const int32 _y){
+    Vector deviate;
+    if (!mp[_obj] &amp;&amp;  classified.length &lt;  VEHICLE_MAX){
+        mp[_obj] = true;
+        //set_vector(deviate, to_float32(_x), to_float32(_y));
+        classified.objects[ classified.length ].id = _obj;
+        classified.objects[ classified.length ++ ].class = _class;
+       // classified.objects[i].position = vadd(cars[_obj].position, deviate);
+    }
+    
+}
+void reset(){
+   int32 i;
+   for (i = 0; i &lt;  VEHICLE_MAX; i ++) mp[vQue[i]] = false;
+    juedgeAE();
+}
+
+
+</declaration>
+		<location id="id29" x="-739" y="-272">
+			<name x="-765" y="-306">running</name>
+		</location>
+		<location id="id30" x="-621" y="-272">
+			<name x="-637" y="-306">receive</name>
+			<committed/>
+		</location>
+		<location id="id31" x="-459" y="-272">
+			<committed/>
+		</location>
+		<location id="id32" x="-459" y="-204">
+			<name x="-476" y="-246">no_detected</name>
+			<committed/>
+		</location>
+		<location id="id33" x="-391" y="-272">
+			<name x="-374" y="-280">detected</name>
+			<committed/>
+		</location>
+		<location id="id34" x="-739" y="-204">
+			<committed/>
+		</location>
+		<init ref="id29"/>
+		<transition>
+			<source ref="id34"/>
+			<target ref="id29"/>
+			<label kind="assignment" x="-782" y="-246">reset()</label>
+		</transition>
+		<transition>
+			<source ref="id30"/>
+			<target ref="id31"/>
+			<label kind="assignment" x="-604" y="-272">recordGroundTruth()</label>
+		</transition>
+		<transition>
+			<source ref="id33"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-629" y="-196">objects!</label>
+			<label kind="assignment" x="-629" y="-170">predict_objects(1, 0, 0, 0)</label>
+			<nail x="-391" y="-170"/>
+			<nail x="-739" y="-170"/>
+		</transition>
+		<transition>
+			<source ref="id31"/>
+			<target ref="id33"/>
+		</transition>
+		<transition>
+			<source ref="id31"/>
+			<target ref="id32"/>
+		</transition>
+		<transition>
+			<source ref="id32"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-595" y="-229">no_object!</label>
+		</transition>
+		<transition>
+			<source ref="id29"/>
+			<target ref="id30"/>
+			<label kind="synchronisation" x="-714" y="-297">request_op?</label>
+		</transition>
+	</template>
+	<template>
+		<name>CTR</name>
+		<declaration>clock x;
+bool all_finished(){
+    int i;
+    for (i = 0; i &lt; tt; i ++){
+        if (!cars[vQue[i]].finished) return false;
+    }
+    return true;
+}</declaration>
+		<location id="id35" x="-68" y="-8">
+			<committed/>
+		</location>
+		<location id="id36" x="-68" y="-68">
+			<label kind="invariant" x="-119" y="-93">x &lt;= 1</label>
+		</location>
+		<location id="id37" x="93" y="-68">
+			<committed/>
+		</location>
+		<location id="id38" x="93" y="-170">
+			<committed/>
+		</location>
+		<location id="id39" x="93" y="-8">
+			<name x="110" y="-17">crash</name>
+		</location>
+		<location id="id40" x="-68" y="-127">
+			<name x="-78" y="-161">finish</name>
+		</location>
+		<init ref="id35"/>
+		<transition>
+			<source ref="id36"/>
+			<target ref="id40"/>
+			<label kind="guard" x="-153" y="-119">all_finished()</label>
+		</transition>
+		<transition>
+			<source ref="id37"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="102" y="-59">collided?</label>
+			<label kind="assignment" x="102" y="-42">collision = true</label>
+		</transition>
+		<transition>
+			<source ref="id37"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="102" y="-136">not_collide?</label>
+		</transition>
+		<transition>
+			<source ref="id36"/>
+			<target ref="id37"/>
+			<label kind="guard" x="-34" y="-110">x == 1 &amp;&amp; 
+!all_finished()</label>
+			<label kind="synchronisation" x="-34" y="-68">request_cd!</label>
+			<label kind="assignment" x="-34" y="-51">timestep ++</label>
+		</transition>
+		<transition>
+			<source ref="id38"/>
+			<target ref="id36"/>
+			<label kind="guard" x="-8" y="-195">x == 1</label>
+			<label kind="synchronisation" x="-8" y="-212">syn!</label>
+			<label kind="assignment" x="-8" y="-170">x = 0</label>
+			<nail x="-161" y="-170"/>
+			<nail x="-161" y="-68"/>
+		</transition>
+		<transition>
+			<source ref="id35"/>
+			<target ref="id36"/>
+			<label kind="synchronisation" x="-102" y="-51">syn!</label>
+			<label kind="assignment" x="-102" y="-34">x = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>AEBS</name>
+		<declaration>bool need_brake;
+
+float32 rel_lon_dis, rel_lat_dis;
+float32 relative_velocity;
+float32 safety_braking_distance(const float32 rel_velocity){
+    float32 sbd, a, b, c;
+    c = fmulti(rel_velocity,rel_velocity);
+    a = fmulti(fmulti(abv, to_float32(gammar)), to_float32(2));
+    b =  fadd(reserved_distance, deviation_distance);
+    sbd = fadd(fdiv(c, a), b);
+    return sbd;
+}
+
+Vector object_vector(const int32 &amp;i){
+    Point a = classified.objects[i].position;
+    index id = classified.objects[i].id;
+    Point b = cars[id].path.points[cars[id].path.length - 2];
+    Vector res = vector(b, a);
+    return res;
+}
+void aebs(){
+    int32 i, id;
+    //vecotor of  autonoumous driving car
+    Vector vecA = car_vector(0);
+    Vector nvecA;
+    //vecotor of  other car
+    Vector vecB;
+    Vector rel_vel;
+
+    float32 size_A;   
+ 
+    to_size(vecA, fmulti(cars[0].velocity, to_float32(gammar)));
+    need_brake = false;
+
+    for (i = 0; i &lt; classified.length; i ++){
+        id = classified.objects[i].id;
+        if (!cars[id].finished){
+            //vecB = car_vector(vQue[i]);
+            vecB = object_vector(i);
+            to_size(vecB, fmulti(cars[id].velocity, to_float32(gammar)));//velocity vector
+        
+            relative_velocity = project(vecB, vecA);
+            relative_velocity = fsub(relative_velocity, fmulti(cars[0].velocity, to_float32(gammar)));
+    
+            if (flss(relative_velocity, to_float32(0))) {
+                vecA = car_vector(0);
+                nvecA = orthogonal(vecA);
+                size_A = sizeof_vector(vecA);
+
+                vecB = vector(cars[0].position, cars[id].position);     
+                //vecB = vector(cars[0].position, classified.objects[i].position);  
+                rel_lon_dis = frabs(fdiv(inner_product(vecA, vecB), size_A));
+                rel_lat_dis = frabs(fdiv(inner_product(nvecA, vecB), size_A));
+    
+                if (flss(rel_lon_dis, safety_braking_distance(relative_velocity)) || flss(rel_lat_dis, safety_braking_distance(relative_velocity))){
+                    need_brake = true;
+                    return;
+                }
+            }
+        }
+        
+    }
+}</declaration>
+		<location id="id41" x="-705" y="-161">
+		</location>
+		<location id="id42" x="-578" y="-161">
+			<committed/>
+		</location>
+		<location id="id43" x="-493" y="-161">
+			<committed/>
+		</location>
+		<init ref="id41"/>
+		<transition>
+			<source ref="id43"/>
+			<target ref="id41"/>
+			<label kind="guard" x="-671" y="-263">need_brake</label>
+			<label kind="synchronisation" x="-671" y="-246">brake!</label>
+			<nail x="-493" y="-229"/>
+			<nail x="-705" y="-229"/>
+		</transition>
+		<transition>
+			<source ref="id43"/>
+			<target ref="id41"/>
+			<label kind="guard" x="-671" y="-128">!need_brake</label>
+			<label kind="synchronisation" x="-671" y="-111">not_brake!</label>
+			<nail x="-493" y="-85"/>
+			<nail x="-705" y="-85"/>
+		</transition>
+		<transition>
+			<source ref="id42"/>
+			<target ref="id43"/>
+			<label kind="assignment" x="-561" y="-161">aebs()</label>
+		</transition>
+		<transition>
+			<source ref="id41"/>
+			<target ref="id42"/>
+			<label kind="synchronisation" x="-680" y="-187">request_aebs?</label>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+
+// List one or more processes to be composed into a system.
+
+other = NAV(2);
+//other = NAV(13);
+auto = BD();
+
+system other, auto, CD, CTR, OP, AEBS, EU;
+    </system>
+	<queries>
+		<query>
+			<formula>A[](!collision)</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>A[](!collision or auto.braked)</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>A[](auto.braked imply !collision)</formula>
+			<comment>刹车碰撞</comment>
+		</query>
+		<query>
+			<formula>A[](auto.braked imply !auto.finish or !other.finish)</formula>
+			<comment>刹车但没有碰撞</comment>
+		</query>
+	</queries>
+</nta>
